@@ -2,9 +2,10 @@ use nix::unistd;
 use oci_spec::runtime::Spec;
 use std::{
     fs,
+    mem::forget,
     os::fd::AsRawFd,
     path::{Path, PathBuf},
-    rc::Rc, mem::forget,
+    rc::Rc,
 };
 use user_ns::UserNamespaceConfig;
 
