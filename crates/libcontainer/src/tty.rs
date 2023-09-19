@@ -2,9 +2,10 @@
 
 use nix::errno::Errno;
 use nix::sys::socket::{self, UnixAddr};
-use nix::unistd::close;
 use nix::unistd::dup2;
 use std::io::IoSlice;
+use std::mem::forget;
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::symlink;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
@@ -74,7 +75,7 @@ pub fn setup_console_socket(
     container_dir: &Path,
     console_socket_path: &Path,
     socket_name: &str,
-) -> Result<RawFd> {
+) -> Result<Option<OwnedFd>> {
     let linked = container_dir.join(socket_name);
     symlink(console_socket_path, &linked).map_err(|err| TTYError::Symlink {
         source: err,
@@ -82,26 +83,26 @@ pub fn setup_console_socket(
         console_socket_path: console_socket_path.to_path_buf().into(),
     })?;
 
-    let mut csocketfd = socket::socket(
+    let csocketfd = socket::socket(
         socket::AddressFamily::Unix,
         socket::SockType::Stream,
         socket::SockFlag::empty(),
         None,
     )
     .map_err(|err| TTYError::CreateConsoleSocketFd { source: err })?;
-    csocketfd = match socket::connect(
-        csocketfd,
+    let csocketfd = match socket::connect(
+        csocketfd.as_raw_fd(),
         &socket::UnixAddr::new(socket_name).map_err(|err| TTYError::InvalidSocketName {
             source: err,
             socket_name: socket_name.to_string(),
         })?,
     ) {
-        Err(Errno::ENOENT) => -1,
+        Err(Errno::ENOENT) => None,
         Err(errno) => Err(TTYError::CreateConsoleSocket {
             source: errno,
             socket_name: socket_name.to_string(),
         })?,
-        Ok(()) => csocketfd,
+        Ok(()) => Some(csocketfd),
     };
     Ok(csocketfd)
 }
@@ -113,23 +114,17 @@ pub fn setup_console(console_fd: &RawFd) -> Result<()> {
         .map_err(|err| TTYError::CreatePseudoTerminal { source: err })?;
     let pty_name: &[u8] = b"/dev/ptmx";
     let iov = [IoSlice::new(pty_name)];
-    let fds = [openpty_result.master];
+    let fds = [openpty_result.master.as_raw_fd()];
     let cmsg = socket::ControlMessage::ScmRights(&fds);
-    socket::sendmsg::<UnixAddr>(
-        console_fd.as_raw_fd(),
-        &iov,
-        &[cmsg],
-        socket::MsgFlags::empty(),
-        None,
-    )
-    .map_err(|err| TTYError::SendPtyMaster { source: err })?;
+    socket::sendmsg::<UnixAddr>(*console_fd, &iov, &[cmsg], socket::MsgFlags::empty(), None)
+        .map_err(|err| TTYError::SendPtyMaster { source: err })?;
 
-    if unsafe { libc::ioctl(openpty_result.slave, libc::TIOCSCTTY) } < 0 {
+    if unsafe { libc::ioctl(openpty_result.slave.as_raw_fd(), libc::TIOCSCTTY) } < 0 {
         tracing::warn!("could not TIOCSCTTY");
     };
-    let slave = openpty_result.slave;
+    let slave = openpty_result.slave.as_raw_fd();
+    forget(openpty_result);
     connect_stdio(&slave, &slave, &slave)?;
-    close(console_fd.as_raw_fd()).map_err(|err| TTYError::CloseConsoleSocket { source: err })?;
 
     Ok(())
 }
@@ -186,7 +181,7 @@ mod tests {
         assert!(lis.is_ok());
         let fd = setup_console_socket(&rundir_path, &socket_path, CONSOLE_SOCKET);
         assert!(fd.is_ok());
-        assert_ne!(fd.unwrap().as_raw_fd(), -1);
+        assert!(fd.unwrap().is_some());
     }
 
     #[test]
@@ -197,7 +192,7 @@ mod tests {
         let (_testdir, rundir_path, socket_path) = init.unwrap();
         let fd = setup_console_socket(&rundir_path, &socket_path, CONSOLE_SOCKET);
         assert!(fd.is_ok());
-        assert_eq!(fd.unwrap().as_raw_fd(), -1);
+        assert!(fd.unwrap().is_none());
     }
 
     #[test]
@@ -221,7 +216,7 @@ mod tests {
         let lis = UnixListener::bind(Path::join(testdir.path(), "console-socket"));
         assert!(lis.is_ok());
         let fd = setup_console_socket(&rundir_path, &socket_path, CONSOLE_SOCKET);
-        let status = setup_console(&fd.unwrap());
+        let status = setup_console(&fd.unwrap().unwrap().as_raw_fd());
         assert!(status.is_ok());
     }
 }

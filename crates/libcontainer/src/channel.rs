@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     io::{IoSlice, IoSliceMut},
     marker::PhantomData,
-    os::unix::prelude::RawFd,
+    os::{
+        fd::{AsRawFd, OwnedFd},
+        unix::prelude::RawFd,
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -198,18 +201,20 @@ where
 {
     let (os_sender, os_receiver) = unix_channel()?;
     let receiver = Receiver {
-        receiver: os_receiver,
+        receiver: os_receiver.as_raw_fd(),
         phantom: PhantomData,
     };
     let sender = Sender {
-        sender: os_sender,
+        sender: os_sender.as_raw_fd(),
         phantom: PhantomData,
     };
+    std::mem::forget(os_sender);
+    std::mem::forget(os_receiver);
     Ok((sender, receiver))
 }
 
 // Use socketpair as the underlying pipe.
-fn unix_channel() -> Result<(RawFd, RawFd), ChannelError> {
+fn unix_channel() -> Result<(OwnedFd, OwnedFd), ChannelError> {
     Ok(socket::socketpair(
         socket::AddressFamily::Unix,
         socket::SockType::SeqPacket,
