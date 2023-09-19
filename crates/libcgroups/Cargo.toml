@@ -14,10 +14,10 @@ keywords = ["youki", "container", "cgroups"]
 
 [features]
 default = ["v1", "v2", "systemd"]
-v1 = []
-v2 = []
-systemd = ["v2", "dep:dbus"]
-cgroupsv2_devices = ["rbpf", "libbpf-sys", "errno", "libc"]
+v1 = ["nix/process", "nix/fs", "nix/signal"]
+v2 = ["nix/process", "nix/fs", "nix/signal"]
+systemd = ["v2", "dep:dbus", "nix/user"]
+cgroupsv2_devices = ["rbpf", "libbpf-sys", "errno", "libc", "nix/dir"]
 
 [dependencies]
 nix = { version = "0.27.1" }
