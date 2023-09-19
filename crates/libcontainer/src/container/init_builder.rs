@@ -2,6 +2,7 @@ use nix::unistd;
 use oci_spec::runtime::Spec;
 use std::{
     fs,
+    os::fd::AsRawFd,
     path::{Path, PathBuf},
     rc::Rc,
 };
@@ -85,6 +86,14 @@ impl InitContainerBuilder {
         } else {
             None
         };
+        let csocketfd = csocketfd.map(|sockfd| match sockfd {
+            Some(sockfd) => {
+                let fd = sockfd.as_raw_fd();
+                std::mem::forget(sockfd);
+                fd
+            }
+            None => -1,
+        });
 
         let user_ns_config = UserNamespaceConfig::new(&spec)?;
 

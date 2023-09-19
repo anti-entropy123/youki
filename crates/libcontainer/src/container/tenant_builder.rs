@@ -8,6 +8,7 @@ use oci_spec::runtime::{
 };
 use procfs::process::Namespace;
 
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::rc::Rc;
 use std::{
     collections::HashMap,
@@ -15,7 +16,6 @@ use std::{
     ffi::{OsStr, OsString},
     fs,
     io::BufReader,
-    os::unix::prelude::RawFd,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -117,6 +117,11 @@ impl TenantContainerBuilder {
         // if socket file path is given in commandline options,
         // get file descriptors of console socket
         let csocketfd = self.setup_tty_socket(&container_dir)?;
+        let csocketfd = csocketfd.map(|sockfd| {
+            let fd = sockfd.as_raw_fd();
+            std::mem::forget(sockfd);
+            fd
+        });
 
         let use_systemd = self.should_use_systemd(&container);
         let user_ns_config = UserNamespaceConfig::new(&spec)?;
@@ -430,14 +435,14 @@ impl TenantContainerBuilder {
         Ok(socket_path)
     }
 
-    fn setup_tty_socket(&self, container_dir: &Path) -> Result<Option<RawFd>, LibcontainerError> {
+    fn setup_tty_socket(&self, container_dir: &Path) -> Result<Option<OwnedFd>, LibcontainerError> {
         let tty_name = Self::generate_name(container_dir, TENANT_TTY);
         let csocketfd = if let Some(console_socket) = &self.base.console_socket {
-            Some(tty::setup_console_socket(
+            tty::setup_console_socket(
                 container_dir,
                 console_socket,
                 &tty_name,
-            )?)
+            )?
         } else {
             None
         };

@@ -110,10 +110,6 @@ impl Namespaces {
                         tracing::error!(?err, ?namespace, "failed to set namespace");
                         err
                     })?;
-                unistd::close(fd).map_err(|err| {
-                    tracing::error!(?err, ?namespace, "failed to close namespace file");
-                    err
-                })?;
             }
             None => {
                 self.command
