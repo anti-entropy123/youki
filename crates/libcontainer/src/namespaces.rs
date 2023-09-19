@@ -8,7 +8,7 @@
 //! Cgroup (Resource limits, execution priority etc.)
 
 use crate::syscall::{syscall::create_syscall, Syscall};
-use nix::{fcntl, sched::CloneFlags, sys::stat, unistd};
+use nix::{fcntl, sched::CloneFlags, sys::stat};
 use oci_spec::runtime::{LinuxNamespace, LinuxNamespaceType};
 use std::collections;
 
