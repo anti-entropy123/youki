@@ -2,8 +2,6 @@ use nix::unistd;
 use oci_spec::runtime::Spec;
 use std::{
     fs,
-    mem::forget,
-    os::fd::AsRawFd,
     path::{Path, PathBuf},
     rc::Rc,
 };
@@ -79,22 +77,10 @@ impl InitContainerBuilder {
         // if socket file path is given in commandline options,
         // get file descriptors of console socket
         let csocketfd = if let Some(console_socket) = &self.base.console_socket {
-            Some(tty::setup_console_socket(
-                &container_dir,
-                console_socket,
-                "console-socket",
-            )?)
+            tty::setup_console_socket(&container_dir, console_socket, "console-socket")?
         } else {
             None
         };
-        let csocketfd = csocketfd.map(|sockfd| match sockfd {
-            Some(sockfd) => {
-                let fd = sockfd.as_raw_fd();
-                forget(sockfd);
-                fd
-            }
-            None => -1,
-        });
 
         let user_ns_config = UserNamespaceConfig::new(&spec)?;
 
@@ -109,7 +95,7 @@ impl InitContainerBuilder {
             syscall: self.base.syscall,
             container_id: self.base.container_id,
             pid_file: self.base.pid_file,
-            console_socket: csocketfd,
+            console_socket: csocketfd.map(Rc::from),
             use_systemd: self.use_systemd,
             spec: Rc::new(spec),
             rootfs,

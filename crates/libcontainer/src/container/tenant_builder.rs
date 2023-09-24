@@ -8,8 +8,7 @@ use oci_spec::runtime::{
 };
 use procfs::process::Namespace;
 
-use std::mem::forget;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 use std::rc::Rc;
 use std::{
     collections::HashMap,
@@ -118,11 +117,6 @@ impl TenantContainerBuilder {
         // if socket file path is given in commandline options,
         // get file descriptors of console socket
         let csocketfd = self.setup_tty_socket(&container_dir)?;
-        let csocketfd = csocketfd.map(|sockfd| {
-            let fd = sockfd.as_raw_fd();
-            forget(sockfd);
-            fd
-        });
 
         let use_systemd = self.should_use_systemd(&container);
         let user_ns_config = UserNamespaceConfig::new(&spec)?;
@@ -137,7 +131,7 @@ impl TenantContainerBuilder {
             syscall: self.base.syscall,
             container_id: self.base.container_id,
             pid_file: self.base.pid_file,
-            console_socket: csocketfd,
+            console_socket: csocketfd.map(Rc::from),
             use_systemd,
             spec: Rc::new(spec),
             rootfs,

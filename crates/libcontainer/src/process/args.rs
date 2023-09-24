@@ -1,5 +1,6 @@
 use libcgroups::common::CgroupConfig;
 use oci_spec::runtime::Spec;
+use std::os::fd::OwnedFd;
 use std::os::unix::prelude::RawFd;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -26,7 +27,7 @@ pub struct ContainerArgs {
     /// Root filesystem of the container
     pub rootfs: PathBuf,
     /// Socket to communicate the file descriptor of the ptty
-    pub console_socket: Option<RawFd>,
+    pub console_socket: Option<Rc<OwnedFd>>,
     /// The Unix Domain Socket to communicate container start
     pub notify_listener: NotifyListener,
     /// File descriptors preserved/passed to the container init process.
