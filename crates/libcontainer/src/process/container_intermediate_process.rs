@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::error::MissingSpecError;
 use crate::{namespaces::Namespaces, process::channel, process::fork};
 use libcgroups::common::CgroupManager;
@@ -112,14 +114,27 @@ pub fn container_intermediate_process(
 
     let cb: CloneCb = {
         let args = args.clone();
-        let init_sender = init_sender.clone();
-        let inter_sender = inter_sender.clone();
+        let mut init_sender = init_sender.clone();
+        let mut inter_sender = inter_sender.clone();
         let mut main_sender = main_sender.clone();
         let mut init_receiver = init_receiver.clone();
         Box::new(move || {
             if let Err(ret) = prctl::set_name("youki:[2:INIT]") {
                 tracing::error!(?ret, "failed to set name for child process");
                 return ret;
+            }
+
+            // Must clean up reference counts that are located on the stack.
+            unsafe {
+                if let Some(socket) = &args.console_socket {
+                    let socket = Rc::into_raw(Rc::clone(socket));
+                    Rc::decrement_strong_count(socket);
+                    Rc::from_raw(socket);
+                }
+                init_sender.decrement_count();
+                inter_sender.decrement_count();
+                main_sender.decrement_count();
+                init_receiver.decrement_count();
             }
 
             // We are inside the forked process here. The first thing we have to do

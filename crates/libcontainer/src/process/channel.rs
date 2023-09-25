@@ -81,10 +81,18 @@ impl MainSender {
         Ok(())
     }
 
-    pub fn close(&self) -> Result<(), ChannelError> {
+    pub fn close(&mut self) -> Result<(), ChannelError> {
         self.sender.close()?;
 
         Ok(())
+    }
+
+    /// Simply expose the `Sender::decrement_count()`.
+    ///
+    /// # Safety
+    /// The reason for `unsafe` is same as `Sender::decrement_count()`.
+    pub unsafe fn decrement_count(&self) {
+        self.sender.decrement_count()
     }
 }
 
@@ -180,7 +188,7 @@ impl MainReceiver {
         }
     }
 
-    pub fn close(&self) -> Result<(), ChannelError> {
+    pub fn close(&mut self) -> Result<(), ChannelError> {
         self.receiver.close()?;
 
         Ok(())
@@ -208,10 +216,18 @@ impl IntermediateSender {
         Ok(())
     }
 
-    pub fn close(&self) -> Result<(), ChannelError> {
+    pub fn close(&mut self) -> Result<(), ChannelError> {
         self.sender.close()?;
 
         Ok(())
+    }
+
+    /// Simply expose the `Sender::decrement_count()`.
+    ///
+    /// # Safety
+    /// The reason for `unsafe` is same as `Sender::decrement_count()`.
+    pub unsafe fn decrement_count(&self) {
+        self.sender.decrement_count()
     }
 }
 
@@ -240,10 +256,18 @@ impl IntermediateReceiver {
         }
     }
 
-    pub fn close(&self) -> Result<(), ChannelError> {
+    pub fn close(&mut self) -> Result<(), ChannelError> {
         self.receiver.close()?;
 
         Ok(())
+    }
+
+    /// Simply expose the `Receiver::decrement_count()`.
+    ///
+    /// # Safety
+    /// The reason for `unsafe` is same as `Receiver::decrement_count()`.
+    pub unsafe fn decrement_count(&self) {
+        self.receiver.decrement_count()
     }
 }
 
@@ -264,10 +288,18 @@ impl InitSender {
         Ok(())
     }
 
-    pub fn close(&self) -> Result<(), ChannelError> {
+    pub fn close(&mut self) -> Result<(), ChannelError> {
         self.sender.close()?;
 
         Ok(())
+    }
+
+    /// Simply expose the `Sender::decrement_count()`.
+    ///
+    /// # Safety
+    /// The reason for `unsafe` is same as `Sender::decrement_count()`.
+    pub unsafe fn decrement_count(&self) {
+        self.sender.decrement_count()
     }
 }
 
@@ -295,10 +327,18 @@ impl InitReceiver {
         }
     }
 
-    pub fn close(&self) -> Result<(), ChannelError> {
+    pub fn close(&mut self) -> Result<(), ChannelError> {
         self.receiver.close()?;
 
         Ok(())
+    }
+
+    /// Simply expose the `Receiver::decrement_count()`.
+    ///
+    /// # Safety
+    /// The reason for `unsafe` is same as `Receiver::decrement_count()`.
+    pub unsafe fn decrement_count(&self) {
+        self.receiver.decrement_count()
     }
 }
 

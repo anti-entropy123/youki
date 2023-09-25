@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     process::{
         args::ContainerArgs,
@@ -39,7 +41,8 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
     // cloned process, we have to be deligent about closing any unused channel.
     // At minimum, we have to close down any unused senders. The corresponding
     // receivers will be cleaned up once the senders are closed down.
-    let (main_sender, mut main_receiver) = channel::main_channel()?;
+    let (mut main_sender, mut main_receiver) = channel::main_channel()?;
+
     let inter_chan = channel::intermediate_channel()?;
     let init_chan = channel::init_channel()?;
 
@@ -52,6 +55,20 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
             if let Err(ret) = prctl::set_name("youki:[1:INTER]") {
                 tracing::error!(?ret, "failed to set name for child process");
                 return ret;
+            }
+
+            // Must clean up reference counts that are located on the stack.
+            unsafe {
+                if let Some(socket) = &container_args.console_socket {
+                    let socket = Rc::into_raw(Rc::clone(socket));
+                    Rc::decrement_strong_count(socket);
+                    Rc::from_raw(socket);
+                }
+                main_sender.decrement_count();
+                inter_chan.0.decrement_count();
+                inter_chan.1.decrement_count();
+                init_chan.0.decrement_count();
+                init_chan.1.decrement_count();
             }
 
             match container_intermediate_process::container_intermediate_process(
@@ -81,9 +98,9 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
         err
     })?;
 
-    let (mut inter_sender, inter_receiver) = inter_chan;
+    let (mut inter_sender, mut inter_receiver) = inter_chan;
     #[cfg(feature = "libseccomp")]
-    let (mut init_sender, init_receiver) = init_chan;
+    let (mut init_sender, mut init_receiver) = init_chan;
     #[cfg(not(feature = "libseccomp"))]
     let (init_sender, init_receiver) = init_chan;
 
