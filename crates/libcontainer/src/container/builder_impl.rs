@@ -140,7 +140,7 @@ impl ContainerBuilderImpl {
             syscall: self.syscall,
             spec: Rc::clone(&self.spec),
             rootfs: self.rootfs.to_owned(),
-            console_socket: self.console_socket.clone(),
+            console_socket: self.console_socket.take(),
             notify_listener,
             preserve_fds: self.preserve_fds,
             container: self.container.to_owned(),

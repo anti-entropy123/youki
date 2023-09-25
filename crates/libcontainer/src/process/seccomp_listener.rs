@@ -102,6 +102,8 @@ fn sync_seccomp_send_msg(listener_path: &Path, msg: &[u8], fd: i32) -> Result<()
         tracing::error!(?err, "failed to write container state to seccomp listener");
         SeccompListenerError::UnixOther(err)
     })?;
+    // The spec requires the listener socket to be closed immediately after sending.
+    drop(socket);
 
     Ok(())
 }

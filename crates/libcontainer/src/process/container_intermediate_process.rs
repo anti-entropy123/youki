@@ -125,6 +125,7 @@ pub fn container_intermediate_process(
             }
 
             // Must clean up reference counts that are located on the stack.
+            // Please refer to the explanation within `container_main_process()`.
             unsafe {
                 if let Some(socket) = &args.console_socket {
                     let socket = Rc::into_raw(Rc::clone(socket));

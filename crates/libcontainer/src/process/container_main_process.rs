@@ -58,6 +58,14 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
             }
 
             // Must clean up reference counts that are located on the stack.
+            //
+            // The current implementation of creating child processes based on
+            // `clone()` can lead to reference counting issues. The `clone` glibc
+            // wrapper creates a child process with an empty stack, which can cause
+            // it to leak reference counters originally located on the stack. This,
+            // in turn, can lead to delayed closure of file descriptors.
+            // The following code is equivalent to executing a drop on those
+            // reference counters.
             unsafe {
                 if let Some(socket) = &container_args.console_socket {
                     let socket = Rc::into_raw(Rc::clone(socket));
@@ -102,7 +110,7 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
     #[cfg(feature = "libseccomp")]
     let (mut init_sender, mut init_receiver) = init_chan;
     #[cfg(not(feature = "libseccomp"))]
-    let (init_sender, init_receiver) = init_chan;
+    let (mut init_sender, mut init_receiver) = init_chan;
 
     // If creating a container with new user namespace, the intermediate process will ask
     // the main process to set up uid and gid mapping, once the intermediate

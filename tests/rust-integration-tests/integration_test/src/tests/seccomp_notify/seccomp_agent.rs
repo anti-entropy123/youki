@@ -56,6 +56,7 @@ pub fn recv_seccomp_listener(seccomp_listener: &Path) -> SeccompAgentResult {
 
     // We received the message correctly here, so we can now safely close the socket and connection.
     let _ = unistd::close(conn);
+    drop(socket);
 
     // We are expecting 1 SCM_RIGHTS message with 1 fd.
     let cmsg = msg

@@ -164,6 +164,9 @@ fn clone(cb: CloneCb, flags: u64, exit_signal: Option<u64>) -> Result<Pid, Clone
     // do not use MAP_GROWSDOWN since it is not well supported.
     // Ref: https://man7.org/linux/man-pages/man2/mmap.2.html
     let child_stack = unsafe {
+        // Since nix 0.27.1, `mmap()` requires a generic parameter `F: AsFd`.
+        // Passing `None` here prevents the compiler from automatically inferring
+        // the type, so need to add `::<File>`.
         mman::mmap::<File>(
             None,
             NonZeroUsize::new(default_stack_size).ok_or(CloneError::ZeroStackSize)?,
