@@ -1,10 +1,10 @@
 //! tty (teletype) for user-system interaction
 
 use nix::errno::Errno;
+use nix::pty::OpenptyResult;
 use nix::sys::socket::{self, UnixAddr};
 use nix::unistd::dup2;
 use std::io::IoSlice;
-use std::mem::forget;
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::symlink;
 use std::os::unix::io::AsRawFd;
@@ -107,7 +107,7 @@ pub fn setup_console_socket(
     Ok(csocketfd)
 }
 
-pub fn setup_console(console_fd: &RawFd) -> Result<()> {
+pub fn setup_console(console_fd: &RawFd) -> Result<OpenptyResult> {
     // You can also access pty master, but it is better to use the API.
     // ref. https://github.com/containerd/containerd/blob/261c107ffc4ff681bc73988f64e3f60c32233b37/vendor/github.com/containerd/go-runc/console.go#L139-L154
     let openpty_result = nix::pty::openpty(None, None)
@@ -123,10 +123,9 @@ pub fn setup_console(console_fd: &RawFd) -> Result<()> {
         tracing::warn!("could not TIOCSCTTY");
     };
     let slave = openpty_result.slave.as_raw_fd();
-    forget(openpty_result);
     connect_stdio(&slave, &slave, &slave)?;
 
-    Ok(())
+    Ok(openpty_result)
 }
 
 fn connect_stdio(stdin: &RawFd, stdout: &RawFd, stderr: &RawFd) -> Result<()> {
@@ -210,6 +209,8 @@ mod tests {
     #[test]
     #[serial]
     fn test_setup_console() {
+        use std::mem::forget;
+
         let init = setup();
         assert!(init.is_ok());
         let (testdir, rundir_path, socket_path) = init.unwrap();
@@ -218,5 +219,6 @@ mod tests {
         let fd = setup_console_socket(&rundir_path, &socket_path, CONSOLE_SOCKET);
         let status = setup_console(&fd.unwrap().unwrap().as_raw_fd());
         assert!(status.is_ok());
+        forget(status)
     }
 }
