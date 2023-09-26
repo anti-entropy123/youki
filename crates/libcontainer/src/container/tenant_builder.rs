@@ -131,7 +131,7 @@ impl TenantContainerBuilder {
             syscall: self.base.syscall,
             container_id: self.base.container_id,
             pid_file: self.base.pid_file,
-            console_socket: csocketfd.map(Rc::from),
+            console_socket: csocketfd,
             use_systemd,
             spec: Rc::new(spec),
             rootfs,
