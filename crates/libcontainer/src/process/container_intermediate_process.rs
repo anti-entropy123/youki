@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::error::MissingSpecError;
 use crate::{namespaces::Namespaces, process::channel, process::fork};
 use libcgroups::common::CgroupManager;
@@ -127,11 +125,7 @@ pub fn container_intermediate_process(
             // Must clean up reference counts that are located on the stack.
             // Please refer to the explanation within `container_main_process()`.
             unsafe {
-                if let Some(socket) = &args.console_socket {
-                    let socket = Rc::into_raw(Rc::clone(socket));
-                    Rc::decrement_strong_count(socket);
-                    Rc::from_raw(socket);
-                }
+                args.decrement_count();
                 init_sender.decrement_count();
                 inter_sender.decrement_count();
                 main_sender.decrement_count();

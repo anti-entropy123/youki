@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::{
     process::{
         args::ContainerArgs,
@@ -57,21 +55,17 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
                 return ret;
             }
 
-            // Must clean up reference counts that are located on the stack.
+            // Must clean up reference counters that are located on the stack.
             //
             // The current implementation of creating child processes based on
             // `clone()` can lead to reference counting issues. The `clone` glibc
-            // wrapper creates a child process with an empty stack, which can cause
+            // wrapper creates a child process with a new stack, which can cause
             // it to leak reference counters originally located on the stack. This,
-            // in turn, can lead to delayed closure of file descriptors.
-            // The following code is equivalent to executing a drop on those
-            // reference counters.
+            // in turn, can lead to delayed closure of file descriptors. The
+            // following code is equivalent to executing a drop on those reference
+            // counters.
             unsafe {
-                if let Some(socket) = &container_args.console_socket {
-                    let socket = Rc::into_raw(Rc::clone(socket));
-                    Rc::decrement_strong_count(socket);
-                    Rc::from_raw(socket);
-                }
+                container_args.decrement_count();
                 main_sender.decrement_count();
                 inter_chan.0.decrement_count();
                 inter_chan.1.decrement_count();
@@ -107,9 +101,6 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
     })?;
 
     let (mut inter_sender, mut inter_receiver) = inter_chan;
-    #[cfg(feature = "libseccomp")]
-    let (mut init_sender, mut init_receiver) = init_chan;
-    #[cfg(not(feature = "libseccomp"))]
     let (mut init_sender, mut init_receiver) = init_chan;
 
     // If creating a container with new user namespace, the intermediate process will ask

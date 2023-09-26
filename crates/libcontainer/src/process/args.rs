@@ -43,3 +43,23 @@ pub struct ContainerArgs {
     /// Manage the functions that actually run on the container
     pub executor: Box<dyn Executor>,
 }
+
+impl ContainerArgs {
+    /// Enforce a decrement of the inner reference counter by 1.
+    ///
+    /// # Safety
+    /// The reason for `unsafe` is the caller must ensure that it's only called
+    /// when absolutely necessary. Please refer to `Sender::decrement_count()`
+    /// for more details.
+    pub unsafe fn decrement_count(&self) {
+        let rc = Rc::into_raw(Rc::clone(&self.spec));
+        Rc::decrement_strong_count(rc);
+        Rc::from_raw(rc);
+
+        if let Some(socket) = &self.console_socket {
+            let socket = Rc::into_raw(Rc::clone(socket));
+            Rc::decrement_strong_count(socket);
+            Rc::from_raw(socket);
+        }
+    }
+}
