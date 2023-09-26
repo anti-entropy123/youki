@@ -77,11 +77,7 @@ impl InitContainerBuilder {
         // if socket file path is given in commandline options,
         // get file descriptors of console socket
         let csocketfd = if let Some(console_socket) = &self.base.console_socket {
-            Some(tty::setup_console_socket(
-                &container_dir,
-                console_socket,
-                "console-socket",
-            )?)
+            tty::setup_console_socket(&container_dir, console_socket, "console-socket")?
         } else {
             None
         };

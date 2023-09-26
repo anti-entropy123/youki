@@ -14,24 +14,24 @@ keywords = ["youki", "container", "cgroups"]
 
 [features]
 default = ["v1", "v2", "systemd"]
-v1 = []
-v2 = []
-systemd = ["v2", "dep:dbus"]
-cgroupsv2_devices = ["rbpf", "libbpf-sys", "errno", "libc"]
+v1 = ["nix/process", "nix/fs", "nix/signal"]
+v2 = ["nix/process", "nix/fs", "nix/signal"]
+systemd = ["v2", "dep:dbus", "nix/user"]
+cgroupsv2_devices = ["rbpf", "libbpf-sys", "errno", "libc", "nix/dir"]
 
 [dependencies]
-nix = "0.26.2"
+nix = { version = "0.27.1" }
 procfs = "0.15.1"
 oci-spec = { version = "~0.6.2", features = ["runtime"] }
 dbus = { version = "0.9.7", optional = true }
 fixedbitset = "0.4.2"
 serde = { version = "1.0", features = ["derive"] }
-rbpf = {version = "0.2.0", optional = true }
+rbpf = { version = "0.2.0", optional = true }
 libbpf-sys = { version = "1.2.1", optional = true }
 errno = { version = "0.3.3", optional = true }
 libc = { version = "0.2.148", optional = true }
 thiserror = "1.0.48"
-tracing = { version = "0.1.37", features = ["attributes"]}
+tracing = { version = "0.1.37", features = ["attributes"] }
 
 [dev-dependencies]
 anyhow = "1.0"

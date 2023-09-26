@@ -112,14 +112,24 @@ pub fn container_intermediate_process(
 
     let cb: CloneCb = {
         let args = args.clone();
-        let init_sender = init_sender.clone();
-        let inter_sender = inter_sender.clone();
+        let mut init_sender = init_sender.clone();
+        let mut inter_sender = inter_sender.clone();
         let mut main_sender = main_sender.clone();
         let mut init_receiver = init_receiver.clone();
         Box::new(move || {
             if let Err(ret) = prctl::set_name("youki:[2:INIT]") {
                 tracing::error!(?ret, "failed to set name for child process");
                 return ret;
+            }
+
+            // Must clean up reference counts that are located on the stack.
+            // Please refer to the explanation within `container_main_process()`.
+            unsafe {
+                args.decrement_count();
+                init_sender.decrement_count();
+                inter_sender.decrement_count();
+                main_sender.decrement_count();
+                init_receiver.decrement_count();
             }
 
             // We are inside the forked process here. The first thing we have to do
