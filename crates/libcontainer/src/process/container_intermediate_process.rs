@@ -1,4 +1,5 @@
 use crate::error::MissingSpecError;
+use crate::process::channel::ChannelError;
 use crate::{namespaces::Namespaces, process::channel, process::fork};
 use libcgroups::common::CgroupManager;
 use nix::unistd::{close, write};
@@ -124,13 +125,22 @@ pub fn container_intermediate_process(
 
             // Must clean up reference counts that are located on the stack.
             // Please refer to the explanation within `container_main_process()`.
-            unsafe {
-                args.decrement_count();
-                init_sender.decrement_count();
-                inter_sender.decrement_count();
-                main_sender.decrement_count();
-                init_receiver.decrement_count();
-            }
+            match (|| {
+                unsafe {
+                    args.decrement_count();
+                    init_sender.decrement_count()?;
+                    inter_sender.decrement_count()?;
+                    main_sender.decrement_count()?;
+                    init_receiver.decrement_count()?;
+                }
+                Ok::<(), ChannelError>(())
+            })() {
+                Ok(_) => (),
+                Err(err) => {
+                    tracing::error!(?err, "channel status error");
+                    return -1;
+                }
+            };
 
             // We are inside the forked process here. The first thing we have to do
             // is to close any unused senders, since fork will make a dup for all

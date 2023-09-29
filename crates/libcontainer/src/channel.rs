@@ -18,8 +18,10 @@ pub enum ChannelError {
     Serde(#[from] serde_json::Error),
     #[error("channel connection broken")]
     BrokenChannel,
-    #[error("Unable to be closed")]
+    #[error("unable to be closed")]
     Unclosed,
+    #[error("channel has been closed")]
+    ClosedChannel,
 }
 #[derive(Clone)]
 pub struct Receiver<T> {
@@ -47,8 +49,13 @@ where
         } else {
             vec![]
         };
+
+        let sender = match self.sender.as_ref() {
+            Some(sender) => sender,
+            None => Err(ChannelError::ClosedChannel)?,
+        };
         socket::sendmsg::<UnixAddr>(
-            self.sender.as_ref().unwrap().as_raw_fd(),
+            sender.as_raw_fd(),
             iov,
             &cmsgs,
             socket::MsgFlags::empty(),
@@ -91,8 +98,12 @@ where
     }
 
     pub fn close(&mut self) -> Result<(), ChannelError> {
+        let sender = match self.sender.as_ref() {
+            Some(sender) => sender,
+            None => Err(ChannelError::ClosedChannel)?,
+        };
         // must ensure that the fd is closed immediately.
-        let count = Arc::strong_count(self.sender.as_ref().unwrap());
+        let count = Arc::strong_count(sender);
         if count != 1 {
             tracing::trace!(?count, "incorrect reference count value");
             return Err(ChannelError::Unclosed)?;
@@ -110,10 +121,16 @@ where
     /// `clone()` can cause a leak of references residing on the stack in the
     /// childprocess. This function allows for manual adjustment of the counter
     /// to correct such situations.
-    pub unsafe fn decrement_count(&self) {
-        let rc = Arc::into_raw(Arc::clone(self.sender.as_ref().unwrap()));
+    pub unsafe fn decrement_count(&self) -> Result<(), ChannelError> {
+        let sender = match self.sender.as_ref() {
+            Some(sender) => sender,
+            None => Err(ChannelError::ClosedChannel)?,
+        };
+        let rc = Arc::into_raw(Arc::clone(sender));
         Arc::decrement_strong_count(rc);
         Arc::from_raw(rc);
+
+        Ok(())
     }
 }
 
@@ -129,8 +146,13 @@ where
                 std::mem::size_of::<u64>(),
             )
         })];
+
+        let receiver = match self.receiver.as_ref() {
+            Some(receiver) => receiver,
+            None => Err(ChannelError::ClosedChannel)?,
+        };
         let _ = socket::recvmsg::<UnixAddr>(
-            self.receiver.as_ref().unwrap().as_raw_fd(),
+            receiver.as_raw_fd(),
             &mut iov,
             None,
             socket::MsgFlags::MSG_PEEK,
@@ -149,8 +171,13 @@ where
         F: Default + AsMut<[RawFd]>,
     {
         let mut cmsgspace = nix::cmsg_space!(F);
+
+        let receiver = match self.receiver.as_ref() {
+            Some(receiver) => receiver,
+            None => Err(ChannelError::ClosedChannel)?,
+        };
         let msg = socket::recvmsg::<UnixAddr>(
-            self.receiver.as_ref().unwrap().as_raw_fd(),
+            receiver.as_raw_fd(),
             iov,
             Some(&mut cmsgspace),
             socket::MsgFlags::MSG_CMSG_CLOEXEC,
@@ -223,8 +250,12 @@ where
     }
 
     pub fn close(&mut self) -> Result<(), ChannelError> {
+        let receiver = match self.receiver.as_ref() {
+            Some(receiver) => receiver,
+            None => Err(ChannelError::ClosedChannel)?,
+        };
         // must ensure that the fd is closed immediately.
-        let count = Arc::strong_count(self.receiver.as_ref().unwrap());
+        let count = Arc::strong_count(receiver);
         if count != 1 {
             tracing::trace!(?count, "incorrect reference count value");
             return Err(ChannelError::Unclosed)?;
@@ -238,10 +269,17 @@ where
     ///
     /// # Safety
     /// The reason for `unsafe` is same as `Sender::decrement_count()`.
-    pub unsafe fn decrement_count(&self) {
-        let rc = Arc::into_raw(Arc::clone(self.receiver.as_ref().unwrap()));
+    pub unsafe fn decrement_count(&self) -> Result<(), ChannelError> {
+        let receiver = match self.receiver.as_ref() {
+            Some(receiver) => receiver,
+            None => Err(ChannelError::ClosedChannel)?,
+        };
+
+        let rc = Arc::into_raw(Arc::clone(receiver));
         Arc::decrement_strong_count(rc);
         Arc::from_raw(rc);
+
+        Ok(())
     }
 }
 

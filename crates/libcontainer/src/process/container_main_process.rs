@@ -1,7 +1,8 @@
 use crate::{
     process::{
         args::ContainerArgs,
-        channel, container_intermediate_process,
+        channel::{self, ChannelError},
+        container_intermediate_process,
         fork::{self, CloneCb},
         intel_rdt::setup_intel_rdt,
     },
@@ -64,14 +65,23 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
             // in turn, can lead to delayed closure of file descriptors. The
             // following code is equivalent to executing a drop on those reference
             // counters.
-            unsafe {
-                container_args.decrement_count();
-                main_sender.decrement_count();
-                inter_chan.0.decrement_count();
-                inter_chan.1.decrement_count();
-                init_chan.0.decrement_count();
-                init_chan.1.decrement_count();
-            }
+            match (|| {
+                unsafe {
+                    container_args.decrement_count();
+                    main_sender.decrement_count()?;
+                    inter_chan.0.decrement_count()?;
+                    inter_chan.1.decrement_count()?;
+                    init_chan.0.decrement_count()?;
+                    init_chan.1.decrement_count()?;
+                }
+                Ok::<(), ChannelError>(())
+            })() {
+                Ok(_) => (),
+                Err(err) => {
+                    tracing::error!(?err, "channel status error");
+                    return -1;
+                }
+            };
 
             match container_intermediate_process::container_intermediate_process(
                 &container_args,

@@ -91,8 +91,10 @@ impl MainSender {
     ///
     /// # Safety
     /// The reason for `unsafe` is same as `Sender::decrement_count()`.
-    pub unsafe fn decrement_count(&self) {
-        self.sender.decrement_count()
+    pub unsafe fn decrement_count(&self) -> Result<(), ChannelError> {
+        self.sender
+            .decrement_count()
+            .map_err(ChannelError::BaseChannelError)
     }
 }
 
@@ -226,8 +228,10 @@ impl IntermediateSender {
     ///
     /// # Safety
     /// The reason for `unsafe` is same as `Sender::decrement_count()`.
-    pub unsafe fn decrement_count(&self) {
-        self.sender.decrement_count()
+    pub unsafe fn decrement_count(&self) -> Result<(), ChannelError> {
+        self.sender
+            .decrement_count()
+            .map_err(ChannelError::BaseChannelError)
     }
 }
 
@@ -266,8 +270,10 @@ impl IntermediateReceiver {
     ///
     /// # Safety
     /// The reason for `unsafe` is same as `Receiver::decrement_count()`.
-    pub unsafe fn decrement_count(&self) {
-        self.receiver.decrement_count()
+    pub unsafe fn decrement_count(&self) -> Result<(), ChannelError> {
+        self.receiver
+            .decrement_count()
+            .map_err(ChannelError::BaseChannelError)
     }
 }
 
@@ -298,8 +304,10 @@ impl InitSender {
     ///
     /// # Safety
     /// The reason for `unsafe` is same as `Sender::decrement_count()`.
-    pub unsafe fn decrement_count(&self) {
-        self.sender.decrement_count()
+    pub unsafe fn decrement_count(&self) -> Result<(), ChannelError> {
+        self.sender
+            .decrement_count()
+            .map_err(ChannelError::BaseChannelError)
     }
 }
 
@@ -337,8 +345,10 @@ impl InitReceiver {
     ///
     /// # Safety
     /// The reason for `unsafe` is same as `Receiver::decrement_count()`.
-    pub unsafe fn decrement_count(&self) {
-        self.receiver.decrement_count()
+    pub unsafe fn decrement_count(&self) -> Result<(), ChannelError> {
+        self.receiver
+            .decrement_count()
+            .map_err(ChannelError::BaseChannelError)
     }
 }
 
