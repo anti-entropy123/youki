@@ -8,7 +8,7 @@
 //! Cgroup (Resource limits, execution priority etc.)
 
 use crate::syscall::{syscall::create_syscall, Syscall};
-use nix::{fcntl, sched::CloneFlags, sys::stat, unistd};
+use nix::{fcntl, sched::CloneFlags, sys::stat};
 use oci_spec::runtime::{LinuxNamespace, LinuxNamespaceType};
 use std::collections;
 
@@ -98,6 +98,7 @@ impl Namespaces {
         tracing::debug!("unshare or setns: {:?}", namespace);
         match namespace.path() {
             Some(path) => {
+                // Note that the fd passed to `set_ns()` will be closed, and should not close it again.
                 let fd = fcntl::open(path, fcntl::OFlag::empty(), stat::Mode::empty()).map_err(
                     |err| {
                         tracing::error!(?err, ?namespace, "failed to open namespace file");
@@ -110,10 +111,6 @@ impl Namespaces {
                         tracing::error!(?err, ?namespace, "failed to set namespace");
                         err
                     })?;
-                unistd::close(fd).map_err(|err| {
-                    tracing::error!(?err, ?namespace, "failed to close namespace file");
-                    err
-                })?;
             }
             None => {
                 self.command

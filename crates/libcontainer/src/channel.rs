@@ -1,12 +1,13 @@
-use nix::{
-    sys::socket::{self, UnixAddr},
-    unistd::{self},
-};
+use nix::sys::socket::{self, UnixAddr};
 use serde::{Deserialize, Serialize};
 use std::{
     io::{IoSlice, IoSliceMut},
     marker::PhantomData,
-    os::unix::prelude::RawFd,
+    os::{
+        fd::{AsRawFd, OwnedFd},
+        unix::prelude::RawFd,
+    },
+    sync::Arc,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -17,16 +18,18 @@ pub enum ChannelError {
     Serde(#[from] serde_json::Error),
     #[error("channel connection broken")]
     BrokenChannel,
+    #[error("Unable to be closed")]
+    Unclosed,
 }
 #[derive(Clone)]
 pub struct Receiver<T> {
-    receiver: RawFd,
+    receiver: Option<Arc<OwnedFd>>,
     phantom: PhantomData<T>,
 }
 
 #[derive(Clone)]
 pub struct Sender<T> {
-    sender: RawFd,
+    sender: Option<Arc<OwnedFd>>,
     phantom: PhantomData<T>,
 }
 
@@ -44,8 +47,14 @@ where
         } else {
             vec![]
         };
-        socket::sendmsg::<UnixAddr>(self.sender, iov, &cmsgs, socket::MsgFlags::empty(), None)
-            .map_err(|e| e.into())
+        socket::sendmsg::<UnixAddr>(
+            self.sender.as_ref().unwrap().as_raw_fd(),
+            iov,
+            &cmsgs,
+            socket::MsgFlags::empty(),
+            None,
+        )
+        .map_err(|e| e.into())
     }
 
     fn send_slice_with_len(
@@ -81,8 +90,30 @@ where
         Ok(())
     }
 
-    pub fn close(&self) -> Result<(), ChannelError> {
-        Ok(unistd::close(self.sender)?)
+    pub fn close(&mut self) -> Result<(), ChannelError> {
+        // must ensure that the fd is closed immediately.
+        let count = Arc::strong_count(self.sender.as_ref().unwrap());
+        if count != 1 {
+            tracing::trace!(?count, "incorrect reference count value");
+            return Err(ChannelError::Unclosed)?;
+        };
+        self.sender = None;
+
+        Ok(())
+    }
+
+    /// Enforce a decrement of the inner reference counter by 1.
+    ///
+    /// # Safety
+    /// The reason for `unsafe` is the caller must ensure that it's only called
+    /// when absolutely necessary. For instance, in the current implementation,
+    /// `clone()` can cause a leak of references residing on the stack in the
+    /// childprocess. This function allows for manual adjustment of the counter
+    /// to correct such situations.
+    pub unsafe fn decrement_count(&self) {
+        let rc = Arc::into_raw(Arc::clone(self.sender.as_ref().unwrap()));
+        Arc::decrement_strong_count(rc);
+        Arc::from_raw(rc);
     }
 }
 
@@ -98,8 +129,12 @@ where
                 std::mem::size_of::<u64>(),
             )
         })];
-        let _ =
-            socket::recvmsg::<UnixAddr>(self.receiver, &mut iov, None, socket::MsgFlags::MSG_PEEK)?;
+        let _ = socket::recvmsg::<UnixAddr>(
+            self.receiver.as_ref().unwrap().as_raw_fd(),
+            &mut iov,
+            None,
+            socket::MsgFlags::MSG_PEEK,
+        )?;
         match len {
             0 => Err(ChannelError::BrokenChannel),
             _ => Ok(len),
@@ -115,7 +150,7 @@ where
     {
         let mut cmsgspace = nix::cmsg_space!(F);
         let msg = socket::recvmsg::<UnixAddr>(
-            self.receiver,
+            self.receiver.as_ref().unwrap().as_raw_fd(),
             iov,
             Some(&mut cmsgspace),
             socket::MsgFlags::MSG_CMSG_CLOEXEC,
@@ -187,8 +222,26 @@ where
         Ok((serde_json::from_slice(&buf[..])?, fds))
     }
 
-    pub fn close(&self) -> Result<(), ChannelError> {
-        Ok(unistd::close(self.receiver)?)
+    pub fn close(&mut self) -> Result<(), ChannelError> {
+        // must ensure that the fd is closed immediately.
+        let count = Arc::strong_count(self.receiver.as_ref().unwrap());
+        if count != 1 {
+            tracing::trace!(?count, "incorrect reference count value");
+            return Err(ChannelError::Unclosed)?;
+        };
+        self.receiver = None;
+
+        Ok(())
+    }
+
+    /// Enforce a decrement of the inner reference counter by 1.
+    ///
+    /// # Safety
+    /// The reason for `unsafe` is same as `Sender::decrement_count()`.
+    pub unsafe fn decrement_count(&self) {
+        let rc = Arc::into_raw(Arc::clone(self.receiver.as_ref().unwrap()));
+        Arc::decrement_strong_count(rc);
+        Arc::from_raw(rc);
     }
 }
 
@@ -198,18 +251,18 @@ where
 {
     let (os_sender, os_receiver) = unix_channel()?;
     let receiver = Receiver {
-        receiver: os_receiver,
+        receiver: Some(Arc::from(os_receiver)),
         phantom: PhantomData,
     };
     let sender = Sender {
-        sender: os_sender,
+        sender: Some(Arc::from(os_sender)),
         phantom: PhantomData,
     };
     Ok((sender, receiver))
 }
 
 // Use socketpair as the underlying pipe.
-fn unix_channel() -> Result<(RawFd, RawFd), ChannelError> {
+fn unix_channel() -> Result<(OwnedFd, OwnedFd), ChannelError> {
     Ok(socket::socketpair(
         socket::AddressFamily::Unix,
         socket::SockType::SeqPacket,
