@@ -5,10 +5,11 @@ use crate::{
     notify_socket::NotifyListener,
     process::{
         self,
-        args::{ContainerArgs, ContainerType},
+        args::{ContainerArgs, ContainerType, InitProcessOwnedFds},
         intel_rdt::delete_resctrl_subdirectory,
     },
     syscall::syscall::SyscallType,
+    tty::ConsoleSocket,
     user_ns::UserNamespaceConfig,
     utils,
     workload::Executor,
@@ -16,7 +17,7 @@ use crate::{
 use libcgroups::common::CgroupManager;
 use nix::unistd::Pid;
 use oci_spec::runtime::Spec;
-use std::{fs, io::Write, os::unix::prelude::RawFd, path::PathBuf, rc::Rc};
+use std::{fs, io::Write, path::PathBuf, rc::Rc};
 
 pub(super) struct ContainerBuilderImpl {
     /// Flag indicating if an init or a tenant container should be created
@@ -35,7 +36,7 @@ pub(super) struct ContainerBuilderImpl {
     /// container process to the higher level runtime
     pub pid_file: Option<PathBuf>,
     /// Socket to communicate the file descriptor of the ptty
-    pub console_socket: Option<RawFd>,
+    pub console_socket: Option<ConsoleSocket>,
     /// Options for new user namespace
     pub user_ns_config: Option<UserNamespaceConfig>,
     /// Path to the Unix Domain Socket to communicate container start
@@ -135,13 +136,15 @@ impl ContainerBuilderImpl {
         // This container_args will be passed to the container processes,
         // therefore we will have to move all the variable by value. Since self
         // is a shared reference, we have to clone these variables here.
-        let container_args = ContainerArgs {
+        let mut container_args = ContainerArgs {
             container_type: self.container_type,
             syscall: self.syscall,
             spec: Rc::clone(&self.spec),
             rootfs: self.rootfs.to_owned(),
-            console_socket: self.console_socket,
-            notify_listener,
+            owned_fds: Some(InitProcessOwnedFds {
+                notify_listener,
+                console_socket: self.console_socket.take(),
+            }),
             preserve_fds: self.preserve_fds,
             container: self.container.to_owned(),
             user_ns_config: self.user_ns_config.to_owned(),
@@ -151,7 +154,7 @@ impl ContainerBuilderImpl {
         };
 
         let (init_pid, need_to_clean_up_intel_rdt_dir) =
-            process::container_main_process::container_main_process(&container_args).map_err(
+            process::container_main_process::container_main_process(&mut container_args).map_err(
                 |err| {
                     tracing::error!(?err, "failed to run container process");
                     LibcontainerError::MainProcess(err)

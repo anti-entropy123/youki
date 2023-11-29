@@ -33,7 +33,7 @@ pub enum ProcessError {
 
 type Result<T> = std::result::Result<T, ProcessError>;
 
-pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bool)> {
+pub fn container_main_process(container_args: &mut ContainerArgs) -> Result<(Pid, bool)> {
     // We use a set of channels to communicate between parent and child process.
     // Each channel is uni-directional. Because we will pass these channel to
     // cloned process, we have to be deligent about closing any unused channel.
@@ -44,7 +44,7 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
     let init_chan = channel::init_channel()?;
 
     let cb: CloneCb = {
-        let container_args = container_args.clone();
+        let mut container_args = container_args.clone();
         let mut main_sender = main_sender.clone();
         let mut inter_chan = inter_chan.clone();
         let mut init_chan = init_chan.clone();
@@ -55,7 +55,7 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
             }
 
             match container_intermediate_process::container_intermediate_process(
-                &container_args,
+                &mut container_args,
                 &mut inter_chan,
                 &mut init_chan,
                 &mut main_sender,
@@ -76,6 +76,7 @@ pub fn container_main_process(container_args: &ContainerArgs) -> Result<(Pid, bo
 
     // Close down unused fds. The corresponding fds are duplicated to the
     // child process during clone.
+    drop(container_args.owned_fds.take());
     main_sender.close().map_err(|err| {
         tracing::error!("failed to close unused sender: {}", err);
         err
