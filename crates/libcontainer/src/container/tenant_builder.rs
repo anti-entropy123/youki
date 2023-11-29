@@ -15,13 +15,13 @@ use std::{
     ffi::{OsStr, OsString},
     fs,
     io::BufReader,
-    os::unix::prelude::RawFd,
     path::{Path, PathBuf},
     str::FromStr,
 };
 
 use crate::error::{ErrInvalidSpec, LibcontainerError, MissingSpecError};
 use crate::process::args::ContainerType;
+use crate::tty::ConsoleSocket;
 use crate::{capabilities::CapabilityExt, container::builder_impl::ContainerBuilderImpl};
 use crate::{notify_socket::NotifySocket, tty, user_ns::UserNamespaceConfig, utils};
 
@@ -430,7 +430,10 @@ impl TenantContainerBuilder {
         Ok(socket_path)
     }
 
-    fn setup_tty_socket(&self, container_dir: &Path) -> Result<Option<RawFd>, LibcontainerError> {
+    fn setup_tty_socket(
+        &self,
+        container_dir: &Path,
+    ) -> Result<Option<ConsoleSocket>, LibcontainerError> {
         let tty_name = Self::generate_name(container_dir, TENANT_TTY);
         let csocketfd = if let Some(console_socket) = &self.base.console_socket {
             Some(tty::setup_console_socket(

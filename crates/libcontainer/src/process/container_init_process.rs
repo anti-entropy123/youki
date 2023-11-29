@@ -1,6 +1,7 @@
 use super::args::{ContainerArgs, ContainerType};
 use crate::error::MissingSpecError;
 use crate::namespaces::NamespaceError;
+use crate::process::args::InitProcessOwnedFds;
 use crate::syscall::{Syscall, SyscallError};
 use crate::{apparmor, notify_socket, rootfs, workload};
 use crate::{
@@ -74,6 +75,8 @@ pub enum InitProcessError {
     WorkloadValidation(#[from] workload::ExecutorValidationError),
     #[error("invalid io priority class: {0}")]
     IoPriorityClass(String),
+    #[error("expect owned_fds, found None")]
+    WrongContainerArgs,
 }
 
 type Result<T> = std::result::Result<T, InitProcessError>;
@@ -266,7 +269,7 @@ fn reopen_dev_null() -> Result<()> {
 // Some variables are unused in the case where libseccomp feature is not enabled.
 #[allow(unused_variables)]
 pub fn container_init_process(
-    args: &ContainerArgs,
+    args: &mut ContainerArgs,
     main_sender: &mut channel::MainSender,
     init_receiver: &mut channel::InitReceiver,
 ) -> Result<()> {
@@ -279,7 +282,13 @@ pub fn container_init_process(
     let hooks = spec.hooks().as_ref();
     let container = args.container.as_ref();
     let namespaces = Namespaces::try_from(linux.namespaces().as_ref())?;
-    let notify_listener = &args.notify_listener;
+    let InitProcessOwnedFds {
+        notify_listener,
+        console_socket,
+    } = args
+        .owned_fds
+        .take()
+        .ok_or(InitProcessError::WrongContainerArgs)?;
 
     setsid().map_err(|err| {
         tracing::error!(?err, "failed to setsid to create a session");
@@ -289,8 +298,8 @@ pub fn container_init_process(
     set_io_priority(syscall.as_ref(), proc.io_priority())?;
 
     // set up tty if specified
-    if let Some(csocketfd) = args.console_socket {
-        tty::setup_console(&csocketfd).map_err(|err| {
+    if let Some(csocketfd) = &console_socket {
+        tty::setup_console(csocketfd.as_raw_fd()).map_err(|err| {
             tracing::error!(?err, "failed to set up tty");
             InitProcessError::Tty(err)
         })?;
@@ -597,10 +606,7 @@ pub fn container_init_process(
         tracing::error!(?err, "failed to wait for container start");
         err
     })?;
-    notify_listener.close().map_err(|err| {
-        tracing::error!(?err, "failed to close notify socket");
-        err
-    })?;
+    drop(notify_listener);
 
     // create_container hook needs to be called after the namespace setup, but
     // before pivot_root is called. This runs in the container namespaces.

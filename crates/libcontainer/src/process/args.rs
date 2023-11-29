@@ -7,12 +7,21 @@ use std::rc::Rc;
 use crate::container::Container;
 use crate::notify_socket::NotifyListener;
 use crate::syscall::syscall::SyscallType;
+use crate::tty::ConsoleSocket;
 use crate::user_ns::UserNamespaceConfig;
 use crate::workload::Executor;
 #[derive(Debug, Copy, Clone)]
 pub enum ContainerType {
     InitContainer,
     TenantContainer { exec_notify_fd: RawFd },
+}
+
+#[derive(Clone)]
+pub struct InitProcessOwnedFds {
+    /// The Unix Domain Socket to communicate container start
+    pub notify_listener: NotifyListener,
+    /// Socket to communicate the file descriptor of the ptty
+    pub console_socket: Option<ConsoleSocket>,
 }
 
 #[derive(Clone)]
@@ -25,10 +34,8 @@ pub struct ContainerArgs {
     pub spec: Rc<Spec>,
     /// Root filesystem of the container
     pub rootfs: PathBuf,
-    /// Socket to communicate the file descriptor of the ptty
-    pub console_socket: Option<RawFd>,
-    /// The Unix Domain Socket to communicate container start
-    pub notify_listener: NotifyListener,
+    /// OwnedFds passed to the container init process.
+    pub owned_fds: Option<InitProcessOwnedFds>,
     /// File descriptors preserved/passed to the container init process.
     pub preserve_fds: i32,
     /// Container state

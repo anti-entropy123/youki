@@ -1,4 +1,4 @@
-use nix::unistd::{self, close};
+use nix::unistd;
 use std::env;
 use std::io::prelude::*;
 use std::os::fd::FromRawFd;
@@ -89,11 +89,6 @@ impl NotifyListener {
 
         Ok(())
     }
-
-    pub fn close(&self) -> Result<()> {
-        close(self.socket.as_raw_fd()).map_err(NotifyListenerError::Close)?;
-        Ok(())
-    }
 }
 
 impl Clone for NotifyListener {
@@ -180,7 +175,6 @@ mod test {
                 // make sure the cloned fd functions correctly.
                 let cloned_listener = listener.clone();
                 cloned_listener.wait_for_container_start().unwrap();
-                cloned_listener.close().unwrap();
             }
         });
 

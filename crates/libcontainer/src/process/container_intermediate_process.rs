@@ -33,7 +33,7 @@ pub enum IntermediateProcessError {
 type Result<T> = std::result::Result<T, IntermediateProcessError>;
 
 pub fn container_intermediate_process(
-    args: &ContainerArgs,
+    args: &mut ContainerArgs,
     intermediate_chan: &mut (channel::IntermediateSender, channel::IntermediateReceiver),
     init_chan: &mut (channel::InitSender, channel::InitReceiver),
     main_sender: &mut channel::MainSender,
@@ -111,7 +111,7 @@ pub fn container_intermediate_process(
     }
 
     let cb: CloneCb = {
-        let args = args.clone();
+        let mut args = args.clone();
         let init_sender = init_sender.clone();
         let inter_sender = inter_sender.clone();
         let mut main_sender = main_sender.clone();
@@ -133,7 +133,7 @@ pub fn container_intermediate_process(
                 tracing::error!(?err, "failed to close sender in the intermediate process");
                 return -1;
             }
-            match container_init_process(&args, &mut main_sender, &mut init_receiver) {
+            match container_init_process(&mut args, &mut main_sender, &mut init_receiver) {
                 Ok(_) => 0,
                 Err(e) => {
                     if let ContainerType::TenantContainer { exec_notify_fd } = args.container_type {
@@ -168,6 +168,8 @@ pub fn container_intermediate_process(
         IntermediateProcessError::InitProcess(err)
     })?;
 
+    // Close unused fds.
+    drop(args.owned_fds.take());
     // Close the exec_notify_fd in this process
     if let ContainerType::TenantContainer { exec_notify_fd } = args.container_type {
         close(exec_notify_fd).map_err(|err| {

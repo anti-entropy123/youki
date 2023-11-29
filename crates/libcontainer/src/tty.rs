@@ -1,10 +1,10 @@
 //! tty (teletype) for user-system interaction
 
-use nix::errno::Errno;
 use nix::sys::socket::{self, UnixAddr};
 use nix::unistd::close;
 use nix::unistd::dup2;
 use std::io::IoSlice;
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::fs::symlink;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
@@ -69,12 +69,29 @@ pub enum TTYError {
 
 type Result<T> = std::result::Result<T, TTYError>;
 
+pub struct ConsoleSocket(OwnedFd);
+
+impl Clone for ConsoleSocket {
+    fn clone(&self) -> Self {
+        // This is safe because the main usage is to pass the console_socket across process
+        // boundary.
+        let fd = self.0.as_raw_fd();
+        Self(unsafe { OwnedFd::from_raw_fd(fd) })
+    }
+}
+
+impl AsRawFd for ConsoleSocket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
+    }
+}
+
 // TODO: Handling when there isn't console-socket.
 pub fn setup_console_socket(
     container_dir: &Path,
     console_socket_path: &Path,
     socket_name: &str,
-) -> Result<RawFd> {
+) -> Result<ConsoleSocket> {
     let linked = container_dir.join(socket_name);
     symlink(console_socket_path, &linked).map_err(|err| TTYError::Symlink {
         source: err,
@@ -82,33 +99,31 @@ pub fn setup_console_socket(
         console_socket_path: console_socket_path.to_path_buf().into(),
     })?;
     // Using ManuallyDrop to keep the socket open.
-    let csocketfd = std::mem::ManuallyDrop::new(
-        socket::socket(
-            socket::AddressFamily::Unix,
-            socket::SockType::Stream,
-            socket::SockFlag::empty(),
-            None,
-        )
-        .map_err(|err| TTYError::CreateConsoleSocketFd { source: err })?,
-    );
-    let csocketfd = match socket::connect(
+    let csocketfd = socket::socket(
+        socket::AddressFamily::Unix,
+        socket::SockType::Stream,
+        socket::SockFlag::empty(),
+        None,
+    )
+    .map_err(|err| TTYError::CreateConsoleSocketFd { source: err })?;
+
+    match socket::connect(
         csocketfd.as_raw_fd(),
         &socket::UnixAddr::new(socket_name).map_err(|err| TTYError::InvalidSocketName {
             source: err,
             socket_name: socket_name.to_string(),
         })?,
     ) {
-        Err(Errno::ENOENT) => -1,
+        // Err(Errno::ENOENT) => Ok(ConsoleSocket(unsafe { OwnedFd::from_raw_fd(-1) })),
         Err(errno) => Err(TTYError::CreateConsoleSocket {
             source: errno,
             socket_name: socket_name.to_string(),
-        })?,
-        Ok(()) => csocketfd.as_raw_fd(),
-    };
-    Ok(csocketfd)
+        }),
+        Ok(()) => Ok(ConsoleSocket(csocketfd)),
+    }
 }
 
-pub fn setup_console(console_fd: &RawFd) -> Result<()> {
+pub fn setup_console(console_fd: RawFd) -> Result<()> {
     // You can also access pty master, but it is better to use the API.
     // ref. https://github.com/containerd/containerd/blob/261c107ffc4ff681bc73988f64e3f60c32233b37/vendor/github.com/containerd/go-runc/console.go#L139-L154
     let openpty_result = nix::pty::openpty(None, None)
@@ -204,8 +219,7 @@ mod tests {
         assert!(init.is_ok());
         let (_testdir, rundir_path, socket_path) = init.unwrap();
         let fd = setup_console_socket(&rundir_path, &socket_path, CONSOLE_SOCKET);
-        assert!(fd.is_ok());
-        assert_eq!(fd.unwrap().as_raw_fd(), -1);
+        assert!(fd.is_err());
     }
 
     #[test]
@@ -229,7 +243,7 @@ mod tests {
         let lis = UnixListener::bind(Path::join(testdir.path(), "console-socket"));
         assert!(lis.is_ok());
         let fd = setup_console_socket(&rundir_path, &socket_path, CONSOLE_SOCKET);
-        let status = setup_console(&fd.unwrap());
+        let status = setup_console(fd.unwrap().as_raw_fd());
         assert!(status.is_ok());
     }
 }
